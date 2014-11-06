@@ -20,6 +20,79 @@ CHAR8 * char16_to_char8 (IN CHAR16 *src, OUT CHAR8 *dest, IN UINT16 size){
 	return dest;
 }
 
+void print_msg(char* file, int line, char* msg, char type,...){
+
+	va_list arg_p;
+	va_start(arg_p, type);
+
+	/*
+	a       -   ascii string
+	s       -   unicode string
+	X       -   fixed 8 byte value in hex
+	x       -   hex value
+	d       -   value as decimal
+	c       -   Unicode char
+	t       -   EFI time structure
+	g       -   Pointer to GUID
+	r       -   EFI status code (result code)
+	o	-   default(or any other char)
+	*/
+
+	switch(type){
+	case 'a' : {
+		CHAR8 *a = va_arg(arg_p, CHAR8*);
+		Print(L"%a: %d : %a : %a\n", file, line, msg, a);
+	}
+		break;
+	case 's' : {
+		CHAR16 *s = va_arg(arg_p, CHAR16*);
+		Print(L"%a: %d : %a : %s\n", file, line, msg, s);
+	}
+		break ;
+	case 'X' : {
+		UINT64 X = va_arg(arg_p, UINT64);
+		Print(L"%a: %d : %a : %X\n", file, line, msg, X);
+	}
+		break ;
+	case 'x' : {
+		UINT32 x = va_arg(arg_p, UINT32);
+		Print(L"%a: %d : %a : %x\n", file, line, msg, x);
+	}
+		break ;
+	case 'd' : {
+		UINT32 d = va_arg(arg_p, UINT32);
+		Print(L"%a: %d : %a : %d\n", file, line, msg, d);
+	}
+		break ;
+	case 'c' : {
+		UINTN c = va_arg(arg_p, UINTN);
+		Print(L"%a: %d : %a : %c\n", file, line, msg, c);
+	}
+		break ;
+	case 't' : {
+		EFI_TIME *t = va_arg(arg_p, EFI_TIME *);
+		Print(L"%a: %d : %a : %t\n", file, line, msg, t);
+	}
+		break ;
+	case 'g' : {
+		EFI_GUID *g = va_arg(arg_p, EFI_GUID *);
+		Print(L"%a: %d : %a : %g\n", file, line, msg, g);
+	}
+		break ;
+	case 'r' : {
+		EFI_STATUS r = va_arg(arg_p, EFI_STATUS);
+		Print(L"%a: %d : %a : %r\n", file, line, msg, r);
+	}
+		break ;
+	default:
+		Print(L"%a: %d : %a \n", file, line, msg);
+		break ;
+
+	}
+	va_end(arg_p);
+	uefi_call_wrapper(BS->Stall, 1, 3 * 1000 * 1000);
+}
+
 EFI_STATUS copy_file_buf(EFI_HANDLE parent_image, CHAR16 *file, CHAR8 **buf, UINTN *buf_len ){
 	EFI_STATUS err;
 	EFI_LOADED_IMAGE *loaded_image;
@@ -32,22 +105,19 @@ EFI_STATUS copy_file_buf(EFI_HANDLE parent_image, CHAR16 *file, CHAR8 **buf, UIN
 			parent_image, NULL, EFI_OPEN_PROTOCOL_GET_PROTOCOL);
 
 	if (EFI_ERROR(err)) {
-		Print(L"multiboot2.c : %d Error getting a LoadedImageProtocol handle: %r ", __LINE__, err);
-        uefi_call_wrapper(BS->Stall, 1, 3 * 1000 * 1000);
+		print_msg("multiboot2.c",__LINE__, ERR_LOAD_IMG_HDL, 'r', err);
         return err;
 	}
 
 	root_dir = LibOpenRoot(loaded_image->DeviceHandle);
 	if (!root_dir) {
-		Print(L"multiboot2.c : %d Unable to open root directory: %r ", __LINE__, err);
-		uefi_call_wrapper(BS->Stall, 1, 3 * 1000 * 1000);
+		print_msg("multiboot2.c",__LINE__, ERR_ROOT_DIR, 'r', EFI_LOAD_ERROR);
         return EFI_LOAD_ERROR;
 	}
 
 	err = uefi_call_wrapper(root_dir->Open, 5, root_dir, &file_handle, file, EFI_FILE_MODE_READ, 0ULL);
 	if (EFI_ERROR(err)){
-		Print(L"multiboot2.c : %d Unable to open file: %r ", __LINE__, err);
-		uefi_call_wrapper(BS->Stall, 1, 3 * 1000 * 1000);
+		print_msg("multiboot2.c",__LINE__, ERR_OPEN_FILE, 'r', err);
 		return err;
 	}
 
@@ -58,8 +128,7 @@ EFI_STATUS copy_file_buf(EFI_HANDLE parent_image, CHAR16 *file, CHAR8 **buf, UIN
 		err  = uefi_call_wrapper(file_handle->GetInfo, 4, file_handle, &GenericFileInfo, &tmp_sz , &tmp_buf);
 
 		if (EFI_ERROR(err)){
-			Print(L"multiboot2.c : %d Unable to get file size: err : %d\n", __LINE__, err);
-			uefi_call_wrapper(BS->Stall, 1, 3 * 1000 * 1000);
+			print_msg("multiboot2.c",__LINE__, ERR_GET_FILE_SZ, 'r', err);
 			uefi_call_wrapper(file_handle->Close, 1, file_handle);
 			return EFI_LOAD_ERROR;
 		}
@@ -72,8 +141,7 @@ EFI_STATUS copy_file_buf(EFI_HANDLE parent_image, CHAR16 *file, CHAR8 **buf, UIN
 
 
 	if (EFI_ERROR(err) || *buf_len < 32) {
-		Print(L"Unable to read file: error : %r bytes read : %d\n", err, *buf_len);
-		uefi_call_wrapper(BS->Stall, 1, 3 * 1000 * 1000);
+		print_msg("multiboot2.c",__LINE__, ERR_READ_FILE, 'r', err);
 		uefi_call_wrapper(file_handle->Close, 1, file_handle);
 		return EFI_LOAD_ERROR;
 	}
@@ -89,12 +157,6 @@ EFI_STATUS parse_header(CHAR8 *buf, UINTN len){
 	mboot_hdr_tag_p tag;
 	mboot_hdr_tag_addr_p addr_tag = NULL;
 
-	/* these 4 are unused for the moment - IGNORE COMPILER WARNING
-	bool console_required = false;
-	bool keep_bs = false;
-	uint32_t entry_addr_tag ;
-	mboot_hdr_tag_fbuf_p fbtag = NULL; */
-
 	int supported_consoles = MULTIBOOT_OS_CONSOLE_EGA_TEXT;
 
 	/*look for the header magic in the buffer, validate the checksum and the arch*/
@@ -103,20 +165,16 @@ EFI_STATUS parse_header(CHAR8 *buf, UINTN len){
 		if (hdr->magic == MULTIBOOT2_HEADER_MAGIC){
 			if(!(hdr->magic + hdr->architecture+ hdr->header_length + hdr->checksum)){
 				if(hdr->architecture != MULTIBOOT_ARCHITECTURE_I386){
-					Print(L"multiboot2.c : %d  Error: Invalid architecture.\n", __LINE__);
-					uefi_call_wrapper(BS->Stall, 1, 3 * 1000 * 1000);
+					print_msg("multiboot2.c",__LINE__, ERR_MBOOT_ARCH, 'o');
 				}
 				break ;
-			}else{
-				Print(L"multiboot2.c : %d  Error: Invalid checksum.\n", __LINE__);
-				uefi_call_wrapper(BS->Stall, 1, 3 * 1000 * 1000);
-			}
+			}else
+				print_msg("multiboot2.c",__LINE__, ERR_MBOOT_CSUM, 'o');
 		}
 	}
 
 	if (hdr == 0){
-		Print(L"multiboot2.c : %d Error: Multiboot2 header not found.\n", __LINE__);
-		uefi_call_wrapper(BS->Stall, 1, 3 * 1000 * 1000);
+		print_msg("multiboot2.c",__LINE__, ERR_MBOOT_HDR, 'o');
 		return EFI_LOAD_ERROR;
 	}
 
@@ -158,10 +216,8 @@ EFI_STATUS parse_header(CHAR8 *buf, UINTN len){
 						break;
 
 						default:
-						Print(L"multiboot2.c : %d Unsupported information tag: 0x%x",
-							__LINE__, req_tag->requests[i]);
-						uefi_call_wrapper(BS->Stall, 1, 3 * 1000 * 1000);
-						return EFI_LOAD_ERROR;
+							print_msg("multiboot2.c",__LINE__, ERR_MBOOT_INF_TAG, 'x', req_tag->requests[i]);
+							return EFI_LOAD_ERROR;
 					}
 				break;
 			}
@@ -175,12 +231,6 @@ EFI_STATUS parse_header(CHAR8 *buf, UINTN len){
 				break;
 
 			case MULTIBOOT_HEADER_TAG_CONSOLE_FLAGS:
-				if (!(((mboot_hdr_tag_con_flags_p) tag)->console_flags
-						& MULTIBOOT_CONSOLE_FLAGS_EGA_TEXT_SUPPORTED))
-					supported_consoles &= ~MULTIBOOT_OS_CONSOLE_EGA_TEXT;
-				if (((struct multiboot_header_tag_console_flags *) tag)->console_flags
-						& MULTIBOOT_CONSOLE_FLAGS_CONSOLE_REQUIRED)
-
 				break;
 
 			case MULTIBOOT_HEADER_TAG_FRAMEBUFFER:
@@ -191,28 +241,24 @@ EFI_STATUS parse_header(CHAR8 *buf, UINTN len){
 				break;
 
 			case MULTIBOOT_HEADER_TAG_EFI_BS:
-				//keep_bs = true;
 				break;
 
 			default:
 		        if (! (tag->flags & MULTIBOOT_HEADER_TAG_OPTIONAL)){
-				Print(L"multiboot2.c : %d Unsupported tag: 0x%x",__LINE__, tag->type);
-				uefi_call_wrapper(BS->Stall, 1, 3 * 1000 * 1000);
-				return EFI_LOAD_ERROR;
+					print_msg("multiboot2.c",__LINE__, ERR_MBOOT_TAG, 'x', tag->type);
+					return EFI_LOAD_ERROR;
 		        }
 		        break ;
 		}
 	}
 
 	if (addr_tag && !has_entry_addr_tag){
-		Print(L"multiboot2.c : %d ERROR: OS entry address not found!\n", __LINE__);
-		uefi_call_wrapper(BS->Stall, 1, 3 * 1000 * 1000);
+		print_msg("multiboot2.c",__LINE__, ERR_MBOOT_OS_ADDR, 'o');
 		return EFI_LOAD_ERROR;
 	}
 
 	if (addr_tag){
-		Print(L"multiboot2.c : %d TODO - parse address tag. Feature not implemented yet.\n", __LINE__);
-		uefi_call_wrapper(BS->Stall, 1, 3 * 1000 * 1000);
+		print_msg("multiboot2.c",__LINE__, ERR_FEATURE, 'o');
 		return EFI_SUCCESS;
 	}else
 		return EFI_LOAD_ELF ;
@@ -256,16 +302,12 @@ static void add_memory_region (e820_entry_t *e820_map,
 	/* different type means another region didn't fit */
 	/* or same type, but there's a hole */
 	if (etype != type || (estart + esize) != start) {
-		if (merge)
-			Print(L"multiboot2.c : %d %3d ===> %016llx/%012lx/%d (%d)\n",
-			__LINE__, e820_map_overflow, estart, esize, etype, merge);
 		merge = 0;
 		estart = start;
 		esize = size;
 		etype = type;
 		e820_map_overflow++;
-		Print(L"multiboot2.c : %d %3d OVER %016llx/%012lx/%d\n",
-			 __LINE__, e820_map_overflow, start, size, type);
+
 		return;
 	}
 	/* same type and no hole, merge it */
@@ -351,7 +393,6 @@ void convert_mmap_efi_e820(efi_mmap_t *efi_mmap)
 					  E820_NVS);
 			break;
 		default:
-			Print(L"multiboot2.c : %d hit default!?", __LINE__);
 			add_memory_region(e820_map, &e820_count,
 					desc->PhysicalStart,
 					desc->NumberOfPages << EFI_PAGE_SHIFT,
@@ -376,21 +417,19 @@ EFI_STATUS get_efi_mmap(){
 
 	/* Get mmap size only. BUFFER TOO SMALL expected here */
 	if (err != EFI_BUFFER_TOO_SMALL) {
-		Print(L"multiboot2.c : %d ERROR: %d Unable to get efi memory map size\n", __LINE__, err);
-		uefi_call_wrapper(BS->Stall, 1, 3 * 1000 * 1000);
+		print_msg("multiboot2.c",__LINE__, ERR_EFI_MAP_SZ, 'r', err);
 		return EFI_LOAD_ERROR;
 	}
 
 	mmap = (EFI_MEMORY_DESCRIPTOR *) AllocateZeroPool(mmap_size) ;
 	if (!mmap)
-		Print(L"multiboot2.c : %d ERROR:%d Unable to allocate efi mmap memory\n", __LINE__, err);
+		print_msg("multiboot2.c",__LINE__, ERR_BUF, 'o');
 
 	/* get the real memory map */
 	err = uefi_call_wrapper(BS->GetMemoryMap,5,
 				&mmap_size, mmap, &mapkey, &desc_size, &desc_ver);
 	if (EFI_ERROR(err)) {
-		Print(L"multiboot2.c : %d ERROR:%d Unable to get efi memory map\n", __LINE__, err);
-		uefi_call_wrapper(BS->Stall, 1, 3 * 1000 * 1000);
+		print_msg("multiboot2.c",__LINE__, ERR_EFI_MAP, 'r', err);
 		return EFI_LOAD_ERROR;
 	}
 
@@ -513,8 +552,7 @@ EFI_STATUS mbi2_populate_framebuffer(void** mbi2_buf){
 	err = LibLocateProtocol(&GraphicsOutputProtocol, (void **)&gop);
 
 	if (EFI_ERROR(err)) {
-		Print(L"multiboot2.c : %d Unable to find GOP\n", __LINE__ );
-		uefi_call_wrapper(BS->Stall, 1, 2 * 1000 * 1000);
+		print_msg("multiboot2.c",__LINE__, ERR_MBOOT_FB_GOP, 'o');
 		return EFI_LOAD_ERROR ;
 	}
 
@@ -527,17 +565,17 @@ EFI_STATUS mbi2_populate_framebuffer(void** mbi2_buf){
 	}
 
 	if (EFI_ERROR(err)) {
-		CHAR16 Buffer[64];
-		StatusToString(Buffer, err);
-		Print(L"multiboot2.c : %d Bad response from QueryMode: %d: %s (%d)\n", __LINE__, gop->Mode->Mode, Buffer, err);
+		CHAR16 buf[64];
+		StatusToString(buf, err);
+		print_msg("multiboot2.c",__LINE__, ERR_MBOOT_BAD_QM, 's', buf);
 		return EFI_LOAD_ERROR ;
 	}
 
 	err=set_rgbr_mask_sz_fld_pos(info->PixelFormat, info, &rgbr_mask_sz_fld_pos) ;
 	if (EFI_ERROR(err)) {
-		CHAR16 Buffer[64];
-		StatusToString(Buffer, err);
-		Print(L"multiboot2.c : %d ERROR: GOP unsupported video mode : %s (%d)\n\n", __LINE__, Buffer, err);
+		CHAR16 buf[64];
+		StatusToString(buf, err);
+		print_msg("multiboot2.c",__LINE__, ERR_GOP_VID_MODE, 's', buf);
 		return EFI_LOAD_ERROR ;
 	}
 
@@ -581,7 +619,6 @@ EFI_STATUS get_acpi1_rsdp(){
 		if (!memcmp (tmp_vendor_guid, &acpi1_tbl_guid, sizeof (EFI_GUID))){
 			acpi1_rsdp = (acpi1_rsdp_t *) ST->ConfigurationTable[i].VendorTable ;
 			return EFI_SUCCESS ;
-
 		}
 	}
 	acpi1_rsdp = NULL ;
@@ -615,23 +652,20 @@ static UINT32 get_mbi2_size (const ConfigEntry *entry)
 
 	err = get_efi_mmap() ;
 	if (EFI_ERROR(err)) {
-		Print(L"multiboot2.c : %d ERROR:%d Unable to get efi memory map\n", __LINE__, err);
-		uefi_call_wrapper(BS->Stall, 1, 3 * 1000 * 1000);
+		print_msg("multiboot2.c",__LINE__, ERR_EFI_MAP, 'r', err);
 		return 0;
 	}
 
 	err = get_acpi1_rsdp() ;
 	if (EFI_ERROR(err)) {
-		Print(L"multiboot2.c : %d ERROR:%d Unable to get ACPIv1 RSDP\n", __LINE__, err);
-		uefi_call_wrapper(BS->Stall, 1, 3 * 1000 * 1000);
+		print_msg("multiboot2.c",__LINE__, ERR_AVPIV1_RSDP, 'r', err);
 		return 0;
 	}
 
 
 	err = get_acpi2_rsdp() ;
 	if (EFI_ERROR(err)) {
-		Print(L"multiboot2.c : %d ERROR:%d Unable to get ACPIv2 RSDP\n", __LINE__, err);
-		uefi_call_wrapper(BS->Stall, 1, 3 * 1000 * 1000);
+		print_msg("multiboot2.c",__LINE__, ERR_AVPIV2_RSDP, 'r', err);
 		return 0;
 	}
 
@@ -759,9 +793,7 @@ EFI_STATUS populate_mbi2(EFI_HANDLE parent_image, const ConfigEntry *entry, void
 
 	*mbi2_buf = AllocateZeroPool(get_mbi2_size(entry)) ;
 	if(!*mbi2_buf){
-		Print(L"multiboot2.c : %d : Error allocating mbi2 buffer.\n", __LINE__);
-		uefi_call_wrapper(BS->Stall, 1, 3 * 1000 * 1000);
-
+		print_msg("multiboot2.c",__LINE__, ERR_BUF, 'o');
 		return EFI_LOAD_ERROR ;
 	}
 	else{
@@ -794,8 +826,7 @@ EFI_STATUS populate_mbi2(EFI_HANDLE parent_image, const ConfigEntry *entry, void
 		/* modules - kernel + initrd + acm*/
 		err = copy_file_buf(parent_image, entry->loader, &kernel_buf, &kern_sz) ;
 		if (EFI_ERROR(err) || !kernel_buf || !kern_sz){
-			Print(L"multiboot2.c : %d Error loading kernel %d.\n", __LINE__, err);
-			uefi_call_wrapper(BS->Stall, 1, 3 * 1000 * 1000);
+			print_msg("multiboot2.c",__LINE__, ERR_LOAD_KERNEL, 'r', err);
 			return EFI_LOAD_ERROR ;
 		}
 
@@ -809,8 +840,7 @@ EFI_STATUS populate_mbi2(EFI_HANDLE parent_image, const ConfigEntry *entry, void
 
 		err = copy_file_buf(parent_image, entry->initrd, &initrd_buf, &initrd_sz) ;
 		if (EFI_ERROR(err) || !initrd_buf || !initrd_sz){
-			Print(L"multiboot2.c : %d Error loading initrd %d.\n", __LINE__, err);
-			uefi_call_wrapper(BS->Stall, 1, 3 * 1000 * 1000);
+			print_msg("multiboot2.c",__LINE__, ERR_LOAD_INITRD, 'r', err);
 			return EFI_LOAD_ERROR ;
 		}
 
@@ -824,8 +854,7 @@ EFI_STATUS populate_mbi2(EFI_HANDLE parent_image, const ConfigEntry *entry, void
 
 		err = copy_file_buf(parent_image, entry->acm, &acm_buf, &acm_sz) ;
 		if (EFI_ERROR(err) || !acm_buf || !acm_sz){
-			Print(L"multiboot2.c : %d Error loading acm %d.\n", __LINE__, err);
-			uefi_call_wrapper(BS->Stall, 1, 3 * 1000 * 1000);
+			print_msg("multiboot2.c",__LINE__, ERR_LOAD_SINITACM, 'r', err);
 			return EFI_LOAD_ERROR ;
 		}
 
@@ -871,8 +900,7 @@ EFI_STATUS populate_mbi2(EFI_HANDLE parent_image, const ConfigEntry *entry, void
 		/* framebuffer info */
 		err = mbi2_populate_framebuffer(&tmp) ;
 		if (EFI_ERROR(err)){
-			Print(L"multiboot2.c : %d Error populating framebuffer %d.\n", __LINE__, err);
-			uefi_call_wrapper(BS->Stall, 1, 3 * 1000 * 1000);
+			print_msg("multiboot2.c",__LINE__, ERR_POP_FB, 'r', err);
 			return EFI_LOAD_ERROR ;
 		}
 

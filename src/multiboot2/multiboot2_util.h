@@ -4,6 +4,9 @@
 #include <efi.h>
 #include "multiboot2.h"
 
+#define ALIGN_UP(addr, align) \
+        ((addr + (typeof (addr)) align - 1) & ~((typeof (addr)) align - 1))
+
 #define EFI_LOAD_ELF			50
 
 #define E820_MAX_ENTRIES		128
@@ -22,8 +25,44 @@
 #define gdt_cs_flags_limit  		0x9a /* present, system, DPL-0, execute/read     */
 #define gdt_ds_flags_limit  		0x92 /* present, system, DPL-0, read/write       */
 
-#define ALIGN_UP(addr, align) \
-        ((addr + (typeof (addr)) align - 1) & ~((typeof (addr)) align - 1))
+
+/* multiboot error messages*/
+
+#define ERR_LOAD_IMG_HDL 	"Error getting a LoadedImageProtocol handle"
+#define ERR_ROOT_DIR 		"Unable to open root directory"
+#define ERR_OPEN_FILE 		"Unable to open file"
+#define ERR_GET_FILE_SZ 	"Unable to get file size"
+#define ERR_READ_FILE 		"Unable to read file"
+#define ERR_MBOOT_ARCH		"Invalid architecture in multiboot2 header"
+#define ERR_MBOOT_CSUM		"Invalid checksum in multiboot2 header"
+#define ERR_MBOOT_HDR 		"Multiboot2 header not found"
+#define ERR_MBOOT_INF_TAG 	"Unsupported multiboot2 information tag"
+#define ERR_MBOOT_TAG 		"Unsupported multiboot2 tag"
+#define ERR_MBOOT_OS_ADDR 	"OS entry address not found"
+#define ERR_EFI_MAP_SZ		"Unable to retrieve EFI memory map size"
+#define ERR_EFI_MAP             "Unable to retrieve EFI memory map"
+#define ERR_MBOOT_FB_GOP 	"Unable to find GOP"
+#define ERR_MBOOT_BAD_QM 	"Bad response from QueryMode"
+#define ERR_GOP_VID_MODE 	"GOP unsupported video mode"
+#define ERR_AVPIV1_RSDP 	"Unable to retrieve ACPIv1 RSDP"
+#define ERR_AVPIV2_RSDP 	"Unable to retrieve ACPIv2 RSDP"
+#define ERR_LOAD_KERNEL 	"Unable to load kernel"
+#define ERR_LOAD_INITRD 	"Unable to load initrd"
+#define ERR_LOAD_SINITACM 	"Unable to load SINIT ACM"
+#define ERR_POP_FB 		"Error populating framebuffer"
+
+/* elf error messages*/
+#define ERR_ELF_HDR 		"Missing ELF header"
+#define ERR_ELF_MAGIC 		"Invalid ELF magic"
+#define ERR_ELF_CLASS 		"Invalid ELF class"
+#define ERR_ELF_TYPE 		"Invalid ELF type"
+#define ERR_ELF_ENTRY 		"Missing ELF entry point"
+#define ERR_MBI2_BUF 		"Missing MBI2 buffer"
+
+/* general error messages*/
+#define ERR_BUF 		"Unable to allocate buffer"
+#define ERR_FEATURE 		"Feature not implemented"
+
 
 enum loader_type {
         LOADER_UNDEFINED,
@@ -154,8 +193,9 @@ typedef mboot_hdr_tag_fbuf_t* mboot_hdr_tag_fbuf_p ;
 EFI_STATUS copy_file_buf(EFI_HANDLE parent_image, CHAR16 *mboot_file, CHAR8 **buf, UINTN *mboot_len) ;
 EFI_STATUS parse_header(CHAR8 *buf, UINTN len) ;
 EFI_STATUS load_elf(CHAR8 *buf, void **entry) ;
-void start_elf(void *buf, void* mbi2_buf) ;
 EFI_STATUS populate_mbi2(EFI_HANDLE parent_image, const ConfigEntry *entry, void** mbi2_buf) ;
+void start_elf(void *buf, void* mbi2_buf) ;
+void print_msg(char* file, int line, char* msg, char type,...) ;
 void *memcpy(void *dst0, const void *src0, unsigned long length) ;
 int memcmp (const void *s1, const void *s2, unsigned n) ;
 

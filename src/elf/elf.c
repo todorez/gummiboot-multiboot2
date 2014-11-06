@@ -18,8 +18,7 @@ EFI_STATUS load_elf(CHAR8 *buf, void **entry)
 	elf_header_t * elf = NULL ;
 
 	if ( buf == NULL ) {
-		Print(L"elf.c : %d: Buffer is zero.\n", __LINE__);
-		uefi_call_wrapper(BS->Stall, 1, 1 * 1000 * 1000);
+		print_msg("multiboot2.c",__LINE__, ERR_ELF_HDR, 'o');
 		return EFI_LOAD_ERROR;
 	}else
 		elf = (elf_header_t *) buf ;
@@ -30,21 +29,18 @@ EFI_STATUS load_elf(CHAR8 *buf, void **entry)
 		|| elf->e_ident[EI_MAG2] != ELFMAG2
 		|| elf->e_ident[EI_MAG3] != ELFMAG3
 		|| elf->e_ident[EI_DATA] != ELFDATA2LSB){
-		Print(L"elf.c : %d: Invalid ELF magic.\n", __LINE__);
-		uefi_call_wrapper(BS->Stall, 1, 3 * 1000 * 1000);
-		return EFI_LOAD_ERROR;
+			print_msg("multiboot2.c",__LINE__, ERR_ELF_MAGIC, 'o');
+			return EFI_LOAD_ERROR;
 	}
 
 	if (elf->e_ident[EI_CLASS] != ELFCLASS32 || elf->e_machine != EM_386
 		|| elf->e_version != EV_CURRENT){
-		Print(L"elf.c : %d: Invalid ELF class.\n", __LINE__);
-		uefi_call_wrapper(BS->Stall, 1, 3 * 1000 * 1000);
-		return EFI_LOAD_ERROR;
+			print_msg("multiboot2.c",__LINE__, ERR_ELF_CLASS, 'o');
+			return EFI_LOAD_ERROR;
 	}
 
 	if (elf->e_type != ET_EXEC && elf->e_type != ET_DYN){
-		Print(L"elf.c : %d: Invalid ELF type.\n", __LINE__);
-		uefi_call_wrapper(BS->Stall, 1, 3 * 1000 * 1000);
+		print_msg("multiboot2.c",__LINE__, ERR_ELF_TYPE, 'o');
 		return EFI_LOAD_ERROR;
 	}
 
@@ -95,14 +91,12 @@ void start_elf(void *buf, void* mbi2_buf){
 	gdt_desc.addr = (uint64_t) global_desc_table;
 
 	if(!buf){
-		Print(L"elf.c : %d : Missing ELF entry point. Resetting.\n", __LINE__);
-		uefi_call_wrapper(BS->Stall, 1, 3 * 1000 * 1000);
+		print_msg("multiboot2.c",__LINE__, ERR_ELF_ENTRY, 'o');
 		uefi_call_wrapper(RT->ResetSystem, 4, EfiResetCold, EFI_SUCCESS,0,0);
 	}
 
 	if(!mbi2_buf){
-		Print(L"elf.c : %d : Missing MBI2 buffer. Resetting.\n", __LINE__);
-		uefi_call_wrapper(BS->Stall, 1, 3 * 1000 * 1000);
+		print_msg("multiboot2.c",__LINE__, ERR_MBI2_BUF, 'o');
 		uefi_call_wrapper(RT->ResetSystem, 4, EfiResetCold, EFI_SUCCESS,0,0);
 	}
 
