@@ -27,6 +27,7 @@
 
 #include <efi.h>
 #include <efilib.h>
+#include <multiboot2_util.h>
 
 #include "util.h"
 #include "console.h"
@@ -44,45 +45,6 @@
 static const char __attribute__((used)) magic[] = "#### LoaderInfo: gummiboot " VERSION " ####";
 
 static const EFI_GUID global_guid = EFI_GLOBAL_VARIABLE;
-
-enum loader_type {
-        LOADER_UNDEFINED,
-        LOADER_EFI,
-        LOADER_LINUX
-};
-
-typedef struct {
-        CHAR16 *file;
-        CHAR16 *title_show;
-        CHAR16 *title;
-        CHAR16 *version;
-        CHAR16 *machine_id;
-        EFI_HANDLE *device;
-        enum loader_type type;
-        CHAR16 *loader;
-        CHAR16 *options;
-        CHAR16 *splash;
-        CHAR16 key;
-        EFI_STATUS (*call)(void);
-        BOOLEAN no_autoselect;
-        BOOLEAN non_unique;
-} ConfigEntry;
-
-typedef struct {
-        ConfigEntry **entries;
-        UINTN entry_count;
-        INTN idx_default;
-        INTN idx_default_efivar;
-        UINTN timeout_sec;
-        UINTN timeout_sec_config;
-        INTN timeout_sec_efivar;
-        CHAR16 *entry_default_pattern;
-        CHAR16 *splash;
-        EFI_GRAPHICS_OUTPUT_BLT_PIXEL *background;
-        CHAR16 *entry_oneshot;
-        CHAR16 *options_edit;
-        CHAR16 *entries_auto;
-} Config;
 
 static void cursor_left(UINTN *cursor, UINTN *first)
 {
@@ -1129,6 +1091,16 @@ static VOID config_entry_add_from_file(Config *config, EFI_HANDLE *device, CHAR1
                         continue;
                 }
 
+                if (strcmpa((CHAR8 *)"multiboot2", key) == 0) {
+                        FreePool(entry->multiboot2);
+                        entry->multiboot2 = stra_to_path(value);
+                        continue;
+                }
+                if (strcmpa((CHAR8 *)"acm", key) == 0) {
+			FreePool(entry->acm);
+                        entry->acm = stra_to_path(value);
+                        continue;
+                }
                 if (strcmpa((CHAR8 *)"linux", key) == 0) {
                         FreePool(entry->loader);
                         entry->type = LOADER_LINUX;
@@ -1163,6 +1135,7 @@ static VOID config_entry_add_from_file(Config *config, EFI_HANDLE *device, CHAR1
                         CHAR16 *new;
 
                         new = stra_to_path(value);
+                        entry->initrd = stra_to_path(value);
                         if (initrd) {
                                 CHAR16 *s;
 
@@ -1187,6 +1160,24 @@ static VOID config_entry_add_from_file(Config *config, EFI_HANDLE *device, CHAR1
                                 entry->options = s;
                         } else {
                                 entry->options = new;
+                                new = NULL;
+                        }
+                        FreePool(new);
+                        continue;
+                }
+
+                if (strcmpa((CHAR8 *)"multiboot2_options", key) == 0) {
+                        CHAR16 *new;
+
+                        new = stra_to_str(value);
+                        if (entry->mboot2_options) {
+                                CHAR16 *s;
+
+                                s = PoolPrint(L"%s %s", entry->mboot2_options, new);
+                                FreePool(entry->mboot2_options);
+                                entry->mboot2_options = s;
+                        } else {
+                                entry->mboot2_options = new;
                                 new = NULL;
                         }
                         FreePool(new);
@@ -1633,16 +1624,45 @@ static VOID config_entry_add_osx(Config *config) {
 }
 
 static EFI_STATUS image_start(EFI_HANDLE parent_image, const Config *config, const ConfigEntry *entry) {
+
         EFI_STATUS err;
         EFI_HANDLE image;
         EFI_DEVICE_PATH *path;
         CHAR16 *options;
+        CHAR8 *os_buf = NULL ;
+        void *elf_entry ;
+        void *mbi2_buf = NULL ;
+
 
         path = FileDevicePath(entry->device, entry->loader);
         if (!path) {
-                Print(L"Error getting device path.");
-                uefi_call_wrapper(BS->Stall, 1, 3 * 1000 * 1000);
-                return EFI_INVALID_PARAMETER;
+		Print(L"Error getting device path.");
+		uefi_call_wrapper(BS->Stall, 1, 3 * 1000 * 1000);
+		return EFI_INVALID_PARAMETER;
+        }
+
+        if(entry->multiboot2){
+		err = copy_file_buf(parent_image, entry->multiboot2, &os_buf, 0) ;
+		if (EFI_ERROR(err))
+			goto out;
+
+		/*parse multiboot2 header*/
+		err = parse_header(os_buf,MULTIBOOT_SEARCH) ;
+
+		/*load as elf binary*/
+		if(err == EFI_LOAD_ELF){
+			err = load_elf(os_buf, &elf_entry) ;
+			if (EFI_ERROR(err))
+				goto out;
+		}else if (EFI_ERROR(err))
+			goto out;
+
+		err = populate_mbi2(parent_image, entry, &mbi2_buf) ;
+		if (EFI_ERROR(err))
+			goto out;
+
+		start_elf(elf_entry, mbi2_buf);
+		/* we should never reach this point */
         }
 
         err = uefi_call_wrapper(BS->LoadImage, 6, FALSE, parent_image, path, NULL, 0, &image);
@@ -1750,7 +1770,6 @@ EFI_STATUS efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *sys_table) {
                 return err;
         }
 
-        /* export the device path this image is started from */
         device_path = DevicePathFromHandle(loaded_image->DeviceHandle);
         if (device_path) {
                 CHAR16 *str;
